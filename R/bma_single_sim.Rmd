@@ -1,0 +1,941 @@
+---
+title: "BMA POCRM Simulation Study"
+author: "Luka Kovacevic"
+date: "20/08/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source("bma_pocrm_post.R")
+library(ggplot2)
+library(cowplot)
+```
+
+
+```{r echo = F, cache = F}
+knitr::knit_hooks$set(document = function(x){
+  gsub("```\n*```r*\n\n\n*", "", x)
+})
+```
+
+This simulation study aims to investigate the properties of four approaches to handling partial orderings in the continual reassessment method. These implementations are as follows 
+
+1. Partial Ordering Continual Reassessment Method proposed by Wages et al. (2011)
+2. Point estimatation of the posterior mean of the working model 
+3. Mixture distribution of the probability of toxicity \(\tau_i\) with allocation via the posterior density
+4. Mixture distribution of the probability of toxicity \(\tau_i\) with allocation via the expected value of \(\tau_i\)
+
+These methods are outlined in detail in the associated implementation specification.
+
+####  Scenarios 
+
+For this simulation study we consider a set of scenarios similar to those in the AGILE trial. We have three potential doses \(d_1, d_2\) and \(d_3\) for which we have the potential orderings \[ 1: d_1 \rightarrow d_2 \rightarrow d_3, \] \[ 2: d_1 \rightarrow d_3 \rightarrow d_2, \] \[ 3: d_2 \rightarrow d_1 \rightarrow d_3. \] Under scenarios 1, 2 and 3, respectively, we have the following true toxicity probabilities:
+
+|         Does Level         |  \(d_1\)   |   \(d_2\)  |   \(d_3\)  |
+|----------------------------|:----------:|:----------:|-----------:|
+|         Scenario 1 (1,2,3) |    0.35    |     0.35   |     0.35   | 
+|         Scenario 2 (1,3)   |    0.25    |     0.23   |     0.46   | 
+|         Scenario 3 (1)     |    0.12    |     0.38   |     0.64   | 
+
+```{r scenarios, include = F}
+s <- 3
+d <- 3
+
+orders <- matrix(nrow = s, ncol = d)
+orders[1,] <- c(1, 2, 3)
+orders[2,] <- c(1, 3, 2)
+orders[3,] <- c(2, 1, 3)
+
+skeleton <- getprior(halfwidth = 0.08, target = 0.4, nu = 2, nlevel = 3)
+
+p.skel <- matrix(0, nrow = s, ncol = d)
+for(j in 1:s){
+  p.skel[j,] <- skeleton[order(orders[j,])]
+}
+
+# scenarios
+# p1 <- c(0.39, 0.4, 0.41)
+p1 <- c(0.35,0.35,0.35)
+p2 <- c(0.25, 0.23, 0.46)
+p3 <- c(0.12, 0.38, 0.64)
+```
+
+A set of repeated simulations will be run to observe the general performance of the proposed methods under these scenarios followed by a set of single trial simulations to observe the behavior of each method and changes in the posterior model probabilities. The simulation parameters are specified as follows:
+
+```{r initialisation}
+ttl <- 0.4    # Target toxicity rate 
+cohortsize <- 1 # Cohort size for each inclusion
+ncohort <- 20   # Number of cohorts
+start_comb <- 2 # Starting combination
+n_stop <- 100    # Number of patients needed on one combination to stop the trial
+ntrial <- 1000   # Number of simulated trials 
+
+# obtains the mean changes in probability of toxicity and model probabilities
+check_jumps <- function(hist, p.skel){
+  diff <- matrix(0, nrow = dim(hist)[1] - 1, ncol = nrow(p.skel) + ncol(p.skel))
+  for(i in 1:(dim(hist)[1] - 1)){
+    diff[i,] <- abs(hist[i+1,3:(2+nrow(p.skel) + ncol(p.skel))] - hist[i,3:(2+nrow(p.skel) + ncol(p.skel))])
+  }
+  return(list(mean_prob = colMeans(diff[,1:nrow(p.skel)]),
+              mean_tox = colMeans(diff[,(nrow(p.skel) + 1):(nrow(p.skel) + ncol(p.skel))])))
+}
+```
+
+
+## Simulation Study
+
+#### Repeated Trial Simulations
+
+|   Method   |            POCRM          |         BMA Point        |        BMA Mixture      |
+|------------|:-------------------------:|:------------------------:|------------------------:|
+| Scenario 1 | (0.2798, 0.3380,  0.3822) | (0.3623, 0.3148, 0.3229) | (0.3342, 0.3490, 0.3168) |
+| Scenario 2 | (0.3488, 0.1918, 0.4594) | (0.3973, 0.1893, 0.4134) | (0.4029, 0.2402, 0.3570) | 
+| Scenario 3 | (0.5126, 0.2533, 0.2341) | (0.4815, 0.2503, 0.2682) | (0.5120, 0.2416, 0.2463) |
+
+#### Single Trial Simulations
+
+In this section, we simulate each method under all three scenarios for only a single trial. Single trial simulations allow for changes in the posterior model probabilities to be observed and their behaviour for each different model can be investigated.
+
+ **********************
+
+##### Scenario 1 
+
+ **********************
+```{r single1, echo = F, results = "hold"}
+cat("################################\n")
+cat("\n")
+cat(" POCRM (Wages et al. (2011))\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.pocrm.seed1 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed1,4)
+
+jump.pocrm.seed1 <- check_jumps(result.pocrm.seed1, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.pocrm.seed2 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+jump.pocrm.seed2 <- check_jumps(result.pocrm.seed2, p.skel = p.skel)
+
+round(result.pocrm.seed2,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.pocrm.seed3 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+jump.pocrm.seed3 <- check_jumps(result.pocrm.seed3, p.skel = p.skel)
+round(result.pocrm.seed3,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+cat(" BMA Point Estimate\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmapoint.seed1 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+round(result.bmapoint.seed1,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+jump.bmapoint.seed1 <- check_jumps(result.bmapoint.seed1, p.skel = p.skel)
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmapoint.seed2 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+jump.bmapoint.seed2 <- check_jumps(result.bmapoint.seed2, p.skel = p.skel)
+round(result.bmapoint.seed2,4)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmapoint.seed3 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+jump.bmapoint.seed3 <- check_jumps(result.bmapoint.seed3, p.skel = p.skel)
+round(result.bmapoint.seed3,4)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+
+cat("\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+cat(" BMA Mixture Distribution (allocation with densities)\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmamix.seed1 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+jump.bmamix.seed1 <- check_jumps(result.bmamix.seed1, p.skel = p.skel)
+round(result.bmamix.seed1,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmamix.seed2 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+jump.bmamix.seed2 <- check_jumps(result.bmamix.seed2, p.skel = p.skel)
+round(result.bmamix.seed2,4)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmamix.seed3 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+jump.bmamix.seed3 <- check_jumps(result.bmamix.seed3, p.skel = p.skel)
+round(result.bmamix.seed3,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+
+cat("\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+cat(" BMA Mixture Distribution (allocation with point estimates)\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmamix2.seed1 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed1 <- check_jumps(result.bmamix2.seed1, p.skel = p.skel)
+round(result.bmamix2.seed1,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmamix2.seed2 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed2 <- check_jumps(result.bmamix2.seed2, p.skel = p.skel)
+round(result.bmamix2.seed2,4)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmamix2.seed3 <- bma_pocrm(p0 = p1,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed3 <- check_jumps(result.bmamix2.seed3, p.skel = p.skel)
+round(result.bmamix2.seed3,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+```
+```{r plot_s1, echo = F}
+
+## Seed 1
+
+mean.pocrm.mod1 <- colMeans(rbind(jump.pocrm.seed1$mean_prob, jump.pocrm.seed2$mean_prob, jump.pocrm.seed3$mean_prob))
+mean.pocrm.est1 <- colMeans(rbind(jump.pocrm.seed1$mean_tox, jump.pocrm.seed2$mean_tox, jump.pocrm.seed3$mean_tox))
+
+mean.bmamix.mod1 <- colMeans(rbind(jump.bmamix.seed1$mean_prob, jump.bmamix.seed2$mean_prob, jump.bmamix.seed3$mean_prob))
+mean.bmamix.est1 <- colMeans(rbind(jump.bmamix.seed1$mean_tox, jump.bmamix.seed2$mean_tox, jump.bmamix.seed3$mean_tox))
+
+mean.bmamix2.mod1 <- colMeans(rbind(jump.bmamix2.seed1$mean_prob, jump.bmamix2.seed2$mean_prob, jump.bmamix2.seed3$mean_prob))
+mean.bmamix2.est1 <- colMeans(rbind(jump.bmamix2.seed1$mean_tox, jump.bmamix2.seed2$mean_tox, jump.bmamix2.seed3$mean_tox))
+
+# 
+# jump.data <- as.data.frame(rbind(cbind(round(jump.pocrm.seed1$mean_prob,4), rep("POCRM"), paste0("m",1:3)), cbind(round(jump.bmapoint.seed1$mean_prob,4), rep("BMA Point"), paste0("m",1:3)), cbind(round(jump.bmamix.seed1$mean_prob,4), rep("BMA Mix. Dens."), paste0("m",1:3)),
+# cbind(round(jump.bmamix2.seed1$mean_prob,4), rep("BMA Mix. Mean"), paste0("m",1:3))))
+# 
+# colnames(jump.data) <- c("m_post", "method", "model")
+# 
+# # plot1 <- ggplot(data = jump.data, mapping = aes(x = model, y = m_post, color = method)) +
+# #   labs(y = "mean change in p(m)", title = "seed = 514") + 
+# #   geom_jitter(width = 0.2, height = 0)
+# 
+# ## Seed 2
+# 
+# jump.data <- as.data.frame(rbind(cbind(round(jump.pocrm.seed2$mean_prob,4), rep("POCRM"), paste0("m",1:3)), cbind(round(jump.bmapoint.seed2$mean_prob,4), rep("BMA Point"), paste0("m",1:3)), cbind(round(jump.bmamix.seed2$mean_prob,4), rep("BMA Mix"), paste0("m",1:3))))
+# 
+# colnames(jump.data) <- c("m_post", "method", "model")
+# 
+# # plot2 <- ggplot(data = jump.data, mapping = aes(x = model, y = m_post, color = method)) +
+# #   geom_point() +
+# #   labs(y = "mean change in p(m)", title = "seed = 334") 
+# 
+# ## Seed 3
+# jump.data <- as.data.frame(rbind(cbind(round(jump.pocrm.seed3$mean_prob,4), rep("POCRM"), paste0("m",1:3)), cbind(round(jump.bmapoint.seed3$mean_prob,4), rep("BMA Point"), paste0("m",1:3)), cbind(round(jump.bmamix.seed3$mean_prob,4), rep("BMA Mix"), paste0("m",1:3))))
+# 
+# colnames(jump.data) <- c("m_post", "method", "model")
+
+# plot3 <- ggplot(data = jump.data, mapping = aes(x = model, y = m_post, color = method)) +
+#   geom_point() +
+#   labs(y = "mean change in p(m)", title = "seed = 580") 
+# 
+# plot_grid(plot1, plot2, plot3)
+# ggplot(mapping = aes(x = c("POCRM","BMA Point","BMA Mixture"), y = c(jump.pocrm.seed3)))
+
+```
+
+
+ **********************
+
+##### Scenario 2
+
+ **********************
+
+```{r single2, echo = F, results = "hold"}
+
+cat("################################\n")
+cat("\n")
+cat(" POCRM (Wages et al. (2011))\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+
+
+cat("Seed: 514\n")
+set.seed(514)
+result.pocrm.seed1 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed1,4)
+jump.pocrm.seed1 <- check_jumps(result.pocrm.seed1, p.skel = p.skel)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.pocrm.seed2 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed2,4)
+jump.pocrm.seed2 <- check_jumps(result.pocrm.seed2, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.pocrm.seed3 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed3,4)
+jump.pocrm.seed3 <- check_jumps(result.pocrm.seed3, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+cat(" BMA Point Estimate\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmapoint.seed1 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+round(result.bmapoint.seed1,4)
+jump.bmapoint.seed1 <- check_jumps(result.bmapoint.seed1, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmapoint.seed2 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+round(result.bmapoint.seed2,4)
+jump.bmapoint.seed2 <- check_jumps(result.bmapoint.seed2, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmapoint.seed3 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+round(result.bmapoint.seed3,4)
+jump.bmapoint.seed3 <- check_jumps(result.bmapoint.seed3, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+cat(" BMA Mixture Distribution (allocation with densities)\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmamix.seed1 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+round(result.bmamix.seed1,4)
+jump.bmamix.seed1 <- check_jumps(result.bmamix.seed1, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmamix.seed2 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+round(result.bmamix.seed2,4)
+jump.bmamix.seed2 <- check_jumps(result.bmamix.seed2, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmamix.seed3 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+round(result.bmamix.seed3,4)
+jump.bmamix.seed3 <- check_jumps(result.bmamix.seed3, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+
+cat("\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+cat(" BMA Mixture Distribution (allocation with point estimates)\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmamix2.seed1 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed1 <- check_jumps(result.bmamix2.seed1, p.skel = p.skel)
+round(result.bmamix2.seed1,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmamix2.seed2 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed2 <- check_jumps(result.bmamix2.seed2, p.skel = p.skel)
+round(result.bmamix2.seed2,4)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmamix2.seed3 <- bma_pocrm(p0 = p2,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed3 <- check_jumps(result.bmamix2.seed3, p.skel = p.skel)
+round(result.bmamix2.seed3,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+```
+
+```{r plot_s2, echo = F}
+
+
+mean.pocrm.mod2 <- colMeans(rbind(jump.pocrm.seed1$mean_prob, jump.pocrm.seed2$mean_prob, jump.pocrm.seed3$mean_prob))
+mean.pocrm.est2 <- colMeans(rbind(jump.pocrm.seed1$mean_tox, jump.pocrm.seed2$mean_tox, jump.pocrm.seed3$mean_tox))
+
+mean.bmamix.mod2 <- colMeans(rbind(jump.bmamix.seed1$mean_prob, jump.bmamix.seed2$mean_prob, jump.bmamix.seed3$mean_prob))
+mean.bmamix.est2 <- colMeans(rbind(jump.bmamix.seed1$mean_tox, jump.bmamix.seed2$mean_tox, jump.bmamix.seed3$mean_tox))
+
+mean.bmamix2.mod2 <- colMeans(rbind(jump.bmamix2.seed1$mean_prob, jump.bmamix2.seed2$mean_prob, jump.bmamix2.seed3$mean_prob))
+mean.bmamix2.est2 <- colMeans(rbind(jump.bmamix2.seed1$mean_tox, jump.bmamix2.seed2$mean_tox, jump.bmamix2.seed3$mean_tox))
+
+
+## Seed 1
+# 
+# jump.data <- as.data.frame(rbind(cbind(round(jump.pocrm.seed1$mean_prob,4), rep("POCRM"), paste0("m",1:3)), cbind(round(jump.bmapoint.seed1$mean_prob,4), rep("BMA Point"), paste0("m",1:3)), cbind(round(jump.bmamix.seed1$mean_prob,4), rep("BMA Mix"), paste0("m",1:3))))
+# 
+# colnames(jump.data) <- c("m_post", "method", "model")
+# 
+# plot1 <- ggplot(data = jump.data, mapping = aes(x = model, y = m_post, color = method)) +
+#   geom_point() +
+#   labs(y = "mean change in p(m)", title = "seed = 514")
+# 
+# ## Seed 2
+# 
+# jump.data <- as.data.frame(rbind(cbind(round(jump.pocrm.seed2$mean_prob,4), rep("POCRM"), paste0("m",1:3)), cbind(round(jump.bmapoint.seed2$mean_prob,4), rep("BMA Point"), paste0("m",1:3)), cbind(round(jump.bmamix.seed2$mean_prob,4), rep("BMA Mix"), paste0("m",1:3))))
+# 
+# colnames(jump.data) <- c("m_post", "method", "model")
+# 
+# plot2 <- ggplot(data = jump.data, mapping = aes(x = model, y = m_post, color = method)) +
+#   geom_point() +
+#   labs(y = "mean change in p(m)", title = "seed = 334") 
+# 
+# ## Seed 3
+# jump.data <- as.data.frame(rbind(cbind(round(jump.pocrm.seed3$mean_prob,4), rep("POCRM"), paste0("m",1:3)), cbind(round(jump.bmapoint.seed3$mean_prob,4), rep("BMA Point"), paste0("m",1:3)), cbind(round(jump.bmamix.seed3$mean_prob,4), rep("BMA Mix"), paste0("m",1:3))))
+# 
+# colnames(jump.data) <- c("m_post", "method", "model")
+# 
+# plot3 <- ggplot(data = jump.data, mapping = aes(x = model, y = m_post, color = method)) +
+#   labs(y = "mean change in p(m)", title = "seed = 580") +
+#   geom_jitter(width = 0.2, height = 0)
+#   # geom_point()
+# 
+# plot_grid(plot1, plot2, plot3)
+# # ggplot(mapping = aes(x = c("POCRM","BMA Point","BMA Mixture"), y = c(jump.pocrm.seed3)))
+
+```
+
+ **********************
+
+##### Scenario 3
+
+ **********************
+
+```{r single3, echo = F, results = "hold"}
+
+cat("################################\n")
+cat("\n")
+cat(" POCRM (Wages et al. (2011))\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+
+
+cat("Seed: 514\n")
+set.seed(514)
+result.pocrm.seed1 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed1,4)
+jump.pocrm.seed1 <- check_jumps(result.pocrm.seed1, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.pocrm.seed2 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed2,4)
+jump.pocrm.seed2 <- check_jumps(result.pocrm.seed2, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.pocrm.seed3 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "Wages", sim_method = "Mozgunov")$hist
+round(result.pocrm.seed3,4)
+jump.pocrm.seed3 <- check_jumps(result.pocrm.seed3, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+cat(" BMA Point Estimate\n")
+cat("\n")
+cat("################################\n")
+cat("\n")
+
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmapoint.seed1 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+round(result.bmapoint.seed1,4)
+jump.bmapoint.seed1 <- check_jumps(result.bmapoint.seed1, p.skel = p.skel)
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmapoint.seed2 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+round(result.bmapoint.seed2,4)
+jump.bmapoint.seed2 <- check_jumps(result.bmapoint.seed2, p.skel = p.skel)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmapoint.seed3 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Point", sim_method = "Mozgunov")$hist
+
+round(result.bmapoint.seed3,4)
+jump.bmapoint.seed3 <- check_jumps(result.bmapoint.seed3, p.skel = p.skel)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+cat(" BMA Mixture Distribution (allocation with densities)\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmamix.seed1 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+
+round(result.bmamix.seed1,4)
+jump.pocrm.seed1 <- check_jumps(result.bmamix.seed1, p.skel = p.skel)
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmamix.seed2 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+
+round(result.bmamix.seed2,4)
+jump.pocrm.seed1 <- check_jumps(result.bmamix.seed2, p.skel = p.skel)
+cat("Target Toxicity Rate: ",ttl,"\n")
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmamix.seed3 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture", sim_method = "Mozgunov")$hist
+
+round(result.bmamix.seed3,4)
+jump.pocrm.seed1 <- check_jumps(result.bmamix.seed3, p.skel = p.skel)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+
+
+cat("\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+cat(" BMA Mixture Distribution (allocation with point estimates)\n")
+cat("\n")
+cat("################################################################\n")
+cat("\n")
+
+cat("Seed: 514\n")
+set.seed(514)
+result.bmamix2.seed1 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed1 <- check_jumps(result.bmamix2.seed1, p.skel = p.skel)
+round(result.bmamix2.seed1,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 334\n")
+set.seed(334)
+result.bmamix2.seed2 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed2 <- check_jumps(result.bmamix2.seed2, p.skel = p.skel)
+round(result.bmamix2.seed2,4)
+
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+cat("\n")
+
+cat("Seed: 580\n")
+set.seed(580)
+result.bmamix2.seed3 <- bma_pocrm(p0 = p3,
+          p.skel = p.skel,
+          ttl = ttl,
+          start_comb = start_comb,
+          cohortsize = cohortsize,
+          ncohort = ncohort,
+          n_stop = n_stop,
+          method = "BMA Mixture2", sim_method = "Mozgunov")$hist
+jump.bmamix2.seed3 <- check_jumps(result.bmamix2.seed3, p.skel = p.skel)
+round(result.bmamix2.seed3,4)
+cat("Target Toxicity Rate: ",ttl,"\n")
+
+```
+
+```{r plot_s3, echo = F}
+
+mean.pocrm.mod3 <- colMeans(rbind(jump.pocrm.seed1$mean_prob, jump.pocrm.seed2$mean_prob, jump.pocrm.seed3$mean_prob))
+mean.pocrm.est3 <- colMeans(rbind(jump.pocrm.seed1$mean_tox, jump.pocrm.seed2$mean_tox, jump.pocrm.seed3$mean_tox))
+
+mean.bmamix.mod3 <- colMeans(rbind(jump.bmamix.seed1$mean_prob, jump.bmamix.seed2$mean_prob, jump.bmamix.seed3$mean_prob))
+mean.bmamix.est3 <- colMeans(rbind(jump.bmamix.seed1$mean_tox, jump.bmamix.seed2$mean_tox, jump.bmamix.seed3$mean_tox))
+
+mean.bmamix2.mod3 <- colMeans(rbind(jump.bmamix2.seed1$mean_prob, jump.bmamix2.seed2$mean_prob, jump.bmamix2.seed3$mean_prob))
+mean.bmamix2.est3 <- colMeans(rbind(jump.bmamix2.seed1$mean_tox, jump.bmamix2.seed2$mean_tox, jump.bmamix2.seed3$mean_tox))
+
+mean.pocrm.mod <- colMeans(rbind(mean.pocrm.mod1, mean.pocrm.mod2, mean.pocrm.mod3))
+mean.bmamix.mod <- colMeans(rbind(mean.bmamix.mod1, mean.bmamix.mod2, mean.bmamix.mod3))
+mean.bmamix2.mod <- colMeans(rbind(mean.bmamix2.mod1, mean.bmamix2.mod2, mean.bmamix2.mod3))
+
+jump.data <- as.data.frame(cbind(c(mean.pocrm.mod, mean.bmamix.mod, mean.bmamix2.mod), rep(paste0("m",1:3),3), c(rep("POCRM",3), rep("BMA Mix. Dens.",3), rep("BMA Mix. Mean",3))))
+
+colnames(jump.data) <- c("Mean change in p(m)", "Ordering","Method")
+
+jump.data$`Mean change in p(m)` <- as.numeric(jump.data$`Mean change in p(m)`)
+
+ggplot(jump.data, mapping = aes(x = Ordering, y = `Mean change in p(m)`, color = Method)) + 
+  geom_point() +
+  ylim(c(0,NA)) + 
+  labs(y = "Absolute Mean Change", title = "Absolute mean change in p(m) vs. ordering")
+
+mean.pocrm.est <- colMeans(rbind(mean.pocrm.est1, mean.pocrm.est2, mean.pocrm.est3))
+mean.bmamix2.est <- colMeans(rbind(mean.bmamix2.est1, mean.bmamix2.est2, mean.bmamix2.est3))
+
+jump.data <- as.data.frame(cbind(c(mean.pocrm.est, mean.bmamix2.est), rep(paste0("d",1:3),2), c(rep("POCRM",3), rep("BMA Mix. Mean",3))))
+
+colnames(jump.data) <- c("Mean change in point estimate", "Dose Level","Method")
+
+jump.data$`Mean change in point estimate` <- as.numeric(jump.data$`Mean change in point estimate`)
+
+ggplot(jump.data, mapping = aes(x = `Dose Level`, y = `Mean change in point estimate`, color = Method)) +
+  geom_point() +
+  ylim(c(0,NA)) +
+  labs(y = "Absolute Mean Change", title = "Absolute mean change in toxicity estimate vs. dose level")
+
+```

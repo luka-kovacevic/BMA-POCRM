@@ -1,0 +1,115 @@
+---
+title: "Bayesian POCRM Simulation"
+output: html_document
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r source, include=F}
+source("bma_pocrm_post.R")
+library(dfcrm)
+library(nnet)
+
+
+  # number of doses 
+  d <- 6
+  # number of partial orderings
+  s <- 6
+  
+  # partial orderings 
+  orders<-matrix(nrow=s,ncol=d)
+  orders[1,] <- c(1,2,3,4,5,6)  
+  orders[2,] <- c(1,2,3,5,4,6)  
+  orders[3,] <- c(1,2,3,5,6,4)  
+  orders[4,] <- c(1,2,5,3,4,6)  
+  orders[5,] <- c(1,2,5,3,6,4)  
+  orders[6,] <- c(1,2,5,6,3,4)
+  
+  # obtaining skeleton probabilities
+  skeleton <- round(getprior(halfwidth = 0.08, target = 0.33, nu = 3, nlevel = 6), 2)
+  
+  # reordering skeleton probabilities according to partial orderings
+  p.skel<-matrix(0,nrow=s,ncol=d)
+  for(j in 1:s){
+    p.skel[j,] <- skeleton[order(orders[j,])]
+  }
+  
+  # true toxicity probabilities for various scenarios 
+  p1 <- c(0.26,0.33,0.51,0.62,0.78,0.86)
+  p2 <- c(0.12,0.21,0.34,0.50,0.66,0.79)
+  p3 <- c(0.04,0.07,0.20,0.33,0.55,0.70)
+  p4 <- c(0.01,0.04,0.05,0.17,0.33,0.67)
+  p5 <- c(0.01,0.02,0.05,0.15,0.20,0.33)
+  p6 <- c(0.50,0.60,0.70,0.80,0.90,0.95)
+  
+  ttr <- 0.33   ##target toxicity rate 
+  cohortsize <- 1 ##cohort size for each inclusion
+  ncohort <- 26  ##number of cohorts
+  start.comb <- 3  ##starting combination
+  n.stop <- 100   ##Number of patients needed on one combination to stop the trial
+  ntrial <- 1000   ##number of simulated trials 
+  set.seed(580)  ##random seed
+  cs <- 0.90        ##confidence level for the confidence interval 
+
+```
+
+### 6
+```{r ncohort, eval=F}
+  y[comb.curr] = y[comb.curr] + rbinom(1,cohortsize,p0[comb.curr]); # generates toxicity data at current dose
+  n[comb.curr] = n[comb.curr] + cohortsize; # increments number of individuals assigned to current dose
+    
+```
+
+becomes:
+
+```{r ncohort2, eval=F}
+   y[comb.curr] = y[comb.curr] + rbinom(1, cohortsize[i], p0[comb.curr])
+   n[comb.curr] = n[comb.curr] + cohortsize[i]
+```
+
+where $i$ denotes the cohort number.
+
+### 7
+
+Initially, the dose which has toxicity closest to the target toxicity rate is chosen regardless of whether the estimated probability of toxicity for this dose is greater than the target toxicity rate or not. 
+
+```{r dose, eval=F}
+  distance <- abs(ptox.hat-ttr) # absolute difference between estimate of probability of toxicity and ttr
+  comb.best <- which.is.max(-distance) # minimum difference between estimate ptox and ttr
+  comb.curr <- min(comb.best,comb.curr+1) # next dose is chosen with restriction of no dose skipping
+```
+
+becomes:
+
+```{r dose2, eval=F}
+distance <- ptox_hat - ttr # difference between estimated probability of toxicity and ttr
+distance[which(distance >= 0)] <- -10000 # set distance for doses greater than ttr to being arbitrarily high
+comb_curr <- which.is.max(distance) # choose dose with minimum distance to ttr
+```
+
+The expectation is that this will lead to more conservative dose escalation since the constraint placed on whether a dose is considered suitable for escalation are now restricted. Previously, the only restriction was that the estimated toxicity based on this dose should be the closest to the target toxicity rate whereas now it also must be lower than the target toxicity rate.
+
+### 8
+
+Currently, the algorithm checks if the lower bound of the confidence interval for the estimate of the probability of toxicity at the lowest dose level is greater than the target toxicity level. If this is true, the algorithm is stopped for safety reasons. The previously obtained values for the posterior mean is used to estimate the probability of toxicity for each dose, \[ \widehat{R}(d_i) = \psi_h (d_i, \widehat{a}_h); \; \; \widehat{a}_h = \int a f_h (a|\Omega_j) da. \] The 90% confidence interval for this estimate is obtain using the posterior variance of the parameter \(a\). If the lower bound of this 90% confidence interval is lower than the target toxicity rate, the dose is deemed to be safe.
+
+```{r safety, eval = F}
+  
+
+  if(ptoxL[1]>ttr){
+    crit.tox=qnorm(0.5+cs/2) # confidence level value
+    lb.tox=est.tox[mtox.sel]-crit.tox*sqrt(post.var.tox) # confidence interval lower bound
+    ub.tox=est.tox[mtox.sel]+crit.tox*sqrt(post.var.tox) # confidence interval upper bound?
+    ptoxL=p.skel[mtox.sel,]**exp(ub.tox) # lower bound of probability
+    ptoxU=p.skel[mtox.sel,]**exp(lb.tox) # upper bound of probability
+    
+    stop=1 # indicator that trial has stopped for safety reasons 
+    break
+  }
+
+```
+
+We are now interested in \[ \Pr[R(d_i) > \theta] < c \] where \(\theta\) is the target toxicity rate and \(c\) is the probability controlling overdose, which is a prespecified value. This is equivalent to being interested in whether the probability that the risk of toxicity exceeds the target toxicity rate is less than a particular value which is our probability controlling overdose, \(c\). We first determine \[ a^* = \log{\left\{\frac{\log{(\theta)}}{\log{(\alpha_{mi})}}\right\}} \] which we can then substitute to obtain the following, \[ \Pr[R(d_i) > \theta] = \int^{a^*}_{-\infty} f_m(a|\Omega_j) da.\]  This safety constraint is checked before dose allocation by restricting the available choices to only doses that are considered to be safe by the constraint.
+
