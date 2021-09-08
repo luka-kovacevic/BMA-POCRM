@@ -1,5 +1,5 @@
 # MRC-BSU-Internship
-The aim of this work is to develop an extension to the Partial Ordering Continual Reassessment Method (POCRM) proposed by Wages et al. (2011) to take into account further uncertainty in the ordering of doses in settings where this uncertainty is present. This work was completed at the MRC Biostatistics Unit between June 2021 and September 2021.
+The aim of this work is to develop an extension to the Partial Ordering Continual Reassessment Method (POCRM) proposed by Wages et al. (2011) to take into account further uncertainty in the ordering of doses in settings where this uncertainty is present. This work was completed at the MRC Biostatistics Unit between June 2021 and September 2021. The documents and R code associated with this project, that can be found within this repository, are outlined below.
 
 # Documents
 Relevant presentations and documents produced throughout the internship. 
@@ -26,3 +26,4 @@ Relevant presentations and documents produced throughout the internship.
 11. **simulation_analysis.R:** *Analyse simulation study results.*
 12. **slurm_calib.txt:** *Script used for calibration via HPC.*
 13. **slurm_sim.txt:** *Script used for simulation study via HPC.*
+14. **output:** *Contains output from calibration and simulation studies. Note: For analysis to be carried out, these files must be in the same folder as the corresponding analysis scripts.*
