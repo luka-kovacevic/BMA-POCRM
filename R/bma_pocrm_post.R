@@ -667,6 +667,43 @@ bma_pocrm_post2.imp <- function(p.skel, ttl, y, n, m_prior = NA,  c_od = NA){
     return(tox*comb_post_tox(tox = tox, dose = dose))
   }
   
+  # posterior probability Pr[\Psi(d_i, a) <  \theta], probability for overdose controlling
+  
+  post_prob_od <- function(tox, dose, model){
+    
+    # a_star is value of a corresponding to particular toxicity under specific dose, model
+    
+    a_star <- log(log(tox)/log(p.skel[model,dose]))
+    
+    # initialising vector for integral values
+    
+    int <- numeric(length(a_star))
+    
+    # for loop allows for multiple toxicity levels to be evaluated simultaneously 
+    
+    for(i in 1:length(a_star)){
+      int[i] <- integrate(post_a, lower = a_star[i], upper = Inf, model = model, abs.tol = 0)$value
+    }
+    
+    return(int)
+    
+  }
+  
+  # applies Bayesian model averaging to obtain the weighted average for the 
+  # probability of overdose, allows for overdose controlling to be implemented
+  
+  comb_prob_od <- function(tox, dose){
+    total <- 0
+    for(model in 1:n_ord){
+      
+      # obtains probability for each ordering and combines uses posterior model probabilities
+      
+      total <- total + m_post[model]*post_prob_od(dose = dose, model = model, tox = tox)
+      
+    }
+    return(total)
+  }
+  
   exp <- numeric(n_dose)
   
   for(k in 1:n_dose){
@@ -685,6 +722,189 @@ bma_pocrm_post2.imp <- function(p.skel, ttl, y, n, m_prior = NA,  c_od = NA){
     
     distance <- abs(exp - ttl)
     comb_curr <- which.is.max(-distance)
+  } else {
+    
+    prob_od <- numeric(n_dose)
+    
+    for(k in 1:n_dose){
+      
+      prob_od[k] <- 1 - comb_prob_od(tox = ttl, dose = k)
+      
+    }
+    
+    distance <- abs(exp - ttl)
+    distance[which(prob_od > c_od)] <- 10000
+    comb_curr <- which.is.max(-distance)
+    
+    if(distance[comb_curr] == 10000){
+      stop <- 1
+    }
+    
+  }
+  
+  return(list(comb_curr = comb_curr,
+              m_post = m_post,
+              ptox_hat = exp,
+              stop = stop))
+}
+
+#' Uses Bayesian model averaging in the POCRM to recommend next dose using estimates
+#' of probability of toxicity and based on available data
+#' 
+#' @param p.skel matrix of skeleton probabilities for all possible orderings
+#' @param ttl target toxicity level
+#' @param y number of DLTs at each dose
+#' @param n number of patients treated at each dose
+#' @param m_prior prior model probabilities, if unspecified uniform probabilities are assigned
+#' @param c_od constant for overdose controlling, if unspecified overdose controlling not applied
+#' @param num_rand number of doses for which randomisation should be applied, rounds down from given number
+#' 
+#' @return list containing the recommended next dose, posterior model probabilities,
+#' indicator for stopping due to safety concerns, estimated probability of toxicities for each dose
+#' 
+bma_pocrm_rand.imp <- function(p.skel, ttl, y, n, m_prior = NA,  c_od = NA, num_rand = NA){
+  
+  # if single ordering is given, convert vector to matrix
+  
+  if(is.vector(p.skel)){ 
+    p.skel <- t(as.matrix(p.skel)) 
+  }
+  
+  # ensuring that num_rand is an integer
+  
+  num_rand <- floor(num_rand)
+  
+  # number of potential orderings
+  
+  n_ord <- nrow(p.skel)
+  
+  # number of drug combinations
+  
+  n_dose <- ncol(p.skel)
+  
+  if (is.na(num_rand)) {
+  
+    num_rand <- n_dose
+    
+  } else if (num_rand < 2){
+    
+    warning("Randomisation must occur between at least 2 doses. num_rand has defaulted to 2.")
+    num_rand <- 2
+    
+  }
+  
+  # assigns default, uniform prior for model probabilities if necessary
+  
+  if(is.na(m_prior)){
+    m_prior <- rep(1/n_ord, n_ord)
+  }
+  
+  # indicator for stopping due to safety
+  # stop = 1 indicates safety concern
+  
+  stop <- 0
+  
+  # initialising vector for integral results for each ordering
+  
+  marginal_tox <- rep(0, n_ord)
+  
+  for(k in 1:n_ord){
+    
+    # obtaining normalising constant for posterior distributions
+    
+    marginal_tox[k] <- integrate(f = bcrmh, lower = -Inf, upper = Inf, p = p.skel[k,], y = y, n = n, abs.tol = 0)$value
+    
+  }
+  
+  # posterior model probabilities
+  
+  m_post <- (marginal_tox*m_prior)/sum(marginal_tox*m_prior)
+  
+  m_sel <- sample.int(n = num_rand, size = 1, prob = m_post[1:num_rand])
+  
+  # posterior density of a
+  
+  post_a <- function(a, model){
+    return(bcrmh(a = a, p = p.skel[model,], y = y, n = n)/marginal_tox[model])
+  }
+  
+  # posterior density of the probability of toxicity under a specific dose and ordering
+  
+  post_tox <- function(tox, dose, model){
+    return(1/abs(tox*log(tox)) * post_a(a = log(log(tox)/log(p.skel[model,dose])), model = model))
+  }
+  
+  # combined posterior density of the probability of toxicity under a specific dose and ordering
+  
+  # function to be integrated to obtain the expected value of the probability of toxicity
+  # for a specific dose
+  
+  integrand <- function(tox, dose){
+    return(tox*post_tox(tox = tox, dose = dose, model = m_sel))
+  }
+  
+  # posterior probability Pr[\Psi(d_i, a) <  \theta], probability for overdose controlling
+  
+  post_prob_od <- function(tox, dose, model){
+    
+    # a_star is value of a corresponding to particular toxicity under specific dose, model
+    
+    a_star <- log(log(tox)/log(p.skel[model,dose]))
+    
+    # initialising vector for integral values
+    
+    int <- numeric(length(a_star))
+    
+    # for loop allows for multiple toxicity levels to be evaluated simultaneously 
+    
+    for(i in 1:length(a_star)){
+      int[i] <- integrate(post_a, lower = a_star[i], upper = Inf, model = model, abs.tol = 0)$value
+    }
+    
+    return(int)
+    
+  }
+  
+  # applies Bayesian model averaging to obtain the weighted average for the 
+  # probability of overdose, allows for overdose controlling to be implemented
+  
+  exp <- numeric(n_dose)
+  
+  for(k in 1:n_dose){
+    
+    # integrating across possible values of probability of toxicity to determine expected value
+    
+    exp[k] <- integrate(integrand, lower = 0, upper = 1, dose = k, abs.tol = 0)$value
+  }
+  
+  # checks if overdose controlling is applied
+  
+  if(is.na(c_od)){
+    
+    # next dose is assigned by minimising difference between expected value of 
+    # probability of toxicity and TTL
+    
+    distance <- abs(exp - ttl)
+    comb_curr <- which.is.max(-distance)
+    
+  } else {
+    
+    prob_od <- numeric(n_dose)
+    
+    for(k in 1:n_dose){
+      
+      prob_od[k] <- 1 - post_prob_od(tox = ttl, dose = k, model = m_sel)
+      
+    }
+    
+    distance <- abs(exp - ttl)
+    distance[which(prob_od > c_od)] <- 10000
+    comb_curr <- which.is.max(-distance)
+    
+    if(distance[comb_curr] == 10000){
+      stop <- 1
+    }
+    
   }
   
   return(list(comb_curr = comb_curr,
@@ -709,11 +929,12 @@ bma_pocrm_post2.imp <- function(p.skel, ttl, y, n, m_prior = NA,  c_od = NA){
 #' @param m_prior  prior model probabilities, if unspecified uniform probabilities are assigned
 #' @param conserv boolean for whether dose allocation is conservative:
 #' @param sim_method specifies which method is used for data generation from "Default", "Mozgunov"
+#' @param num_rand number of doses for which randomisation should be carried out, minimum of 2
 #' 
 #' @return list containing the recommended dose, toxicity data, patient treatment data, 
 #' the safety stopping indicator, posterior model probabilities and historical data describing the full trial
 #' 
-bma_pocrm <- function(p0, p.skel, ttl, cohortsize, ncohort, n_stop, no_skip = F, start_comb, c_od = NA, cs = NA, method = "BMA Mixture", m_prior = NA, conserv = F, sim_method = "Default"){
+bma_pocrm <- function(p0, p.skel, ttl, cohortsize, ncohort, n_stop, no_skip = F, start_comb, c_od = NA, cs = NA, method = "BMA Mixture", m_prior = NA, conserv = F, sim_method = "Default", num_rand = NA){
   
   # if single ordering is passed, convert to matrix
   
@@ -797,7 +1018,8 @@ bma_pocrm <- function(p0, p.skel, ttl, cohortsize, ncohort, n_stop, no_skip = F,
                       "BMA Mixture" = bma_pocrm_post.imp(p.skel = p.skel, ttl = ttl, y = y, n = n, m_prior = m_prior, c_od = c_od),
                       "BMA Point" = bma_pocrm_point.imp(p.skel = p.skel, ttl = ttl, y = y, n = n, m_prior = m_prior, c_od = c_od, conserv = conserv),
                       "Wages" = pocrm.imp(p.skel = p.skel, ttl = ttl, y = y, n = n, cs = cs, m_prior = m_prior, c_od = c_od, conserv = conserv),
-                      "BMA Mixture2" = bma_pocrm_post2.imp(p.skel = p.skel, ttl = ttl, y = y, n = n, m_prior= m_prior,  c_od = c_od))
+                      "BMA Mixture2" = bma_pocrm_post2.imp(p.skel = p.skel, ttl = ttl, y = y, n = n, m_prior = m_prior,  c_od = c_od),
+                      "Randomised" = bma_pocrm_rand.imp(p.skel = p.skel, ttl = ttl, y = y, n = n, m_prior = m_prior, c_od = c_od, num_rand = num_rand))
     
     comb_best <- results$comb_curr
     m_post <- results$m_post
@@ -863,11 +1085,12 @@ bma_pocrm <- function(p0, p.skel, ttl, cohortsize, ncohort, n_stop, no_skip = F,
 #' @param conserv boolean for whether dose allocation is conservative:
 #' @param output specifies whether output is printed or returned in a list
 #' @param sim_method specifies which method is used for data generation from "Default", "Mozgunov"
+#' @param num_rand number of doses for which randomisation should be applied, minimum of 2
 #' 
 #' @return list containing the recommended dose, toxicity data, patient treatment data, 
 #' the safety stopping indicator, posterior model probabilities and historical data describing the full trial
 #' 
-bma_pocrm.sim <- function(p0, p.skel, ttl, start_comb, cohortsize, ncohort, n_stop, ntrial, c_od = NA, no_skip = F, cs = 0.9, method = "BMA Mixture", m_prior = NA, conserv = F, output = "print", sim_method = "Default"){
+bma_pocrm.sim <- function(p0, p.skel, ttl, start_comb, cohortsize, ncohort, n_stop, ntrial, c_od = NA, no_skip = F, cs = 0.9, method = "BMA Mixture", m_prior = NA, conserv = F, output = "print", sim_method = "Default", num_rand = NA){
   
   # check that valid allocation method is selected
   
@@ -900,7 +1123,8 @@ bma_pocrm.sim <- function(p0, p.skel, ttl, start_comb, cohortsize, ncohort, n_st
                         method = method, 
                         m_prior = m_prior,
                         conserv = conserv,
-                        sim_method = sim_method)
+                        sim_method = sim_method,
+                        num_rand = num_rand)
     
     comb_select[i,] <- result$comb_select
     hist <- hist + result$hist
