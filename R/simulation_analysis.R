@@ -23,18 +23,22 @@ data <- c()
 for(i in 1:13){
    result <- fromJSON(file = paste0("output_scenario_",i,".Rout"))
    
+   # percent correct selections 
    pcs_scen <- rbind(sum(result[[1]]$select_percent[which(scenario[i,] == 0.3)]), 
                      sum(result[[2]]$select_percent[which(scenario[i,] == 0.3)]), 
                      sum(result[[3]]$select_percent[which(scenario[i,] == 0.3)]))
    
+   # percent accetable selections 
    pas_scen <- rbind(sum(result[[1]]$select_percent[which(scenario[i,] == 0.3 | scenario[i,] == 0.2)]), 
                        sum(result[[2]]$select_percent[which(scenario[i,] == 0.3 | scenario[i,] == 0.2)]), 
                        sum(result[[3]]$select_percent[which(scenario[i,] == 0.3 | scenario[i,] == 0.2)]))
    
+   # percent overly toxic selections 
    pots_scen <- rbind(sum(result[[1]]$select_percent[which(scenario[i,] > 0.33)]), 
                          sum(result[[2]]$select_percent[which(scenario[i,] > 0.33)]), 
                          sum(result[[3]]$select_percent[which(scenario[i,] > 0.33)]))
 
+   # number of patients treated at doses considered to be overly toxic
    unsafe_scen <- rbind(sum(result[[1]]$num_pat[which(scenario[i,] > 0.33)])*0.2, 
                           sum(result[[2]]$num_pat[which(scenario[i,] > 0.33)])*0.2, 
                           sum(result[[3]]$num_pat[which(scenario[i,] > 0.33)])*0.2)

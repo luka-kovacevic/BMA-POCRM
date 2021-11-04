@@ -748,7 +748,7 @@ bma_pocrm_post2.imp <- function(p.skel, ttl, y, n, m_prior = NA,  c_od = NA){
               stop = stop))
 }
 
-#' Uses Bayesian model averaging in the POCRM to recommend next dose using estimates
+#' Uses randomised order selection with POCRM to recommend next dose using estimates
 #' of probability of toxicity and based on available data
 #' 
 #' @param p.skel matrix of skeleton probabilities for all possible orderings
