@@ -11,7 +11,7 @@ library(numDeriv)
 #' 
 bcrmh<-function(a,p,y,n){
   s2=1.34
-  lik=exp(-0.5*a*a/s2)
+  lik=exp(-0.5*a*a/s2) # prior density for a
   for(j in 1:length(p)){ # for each dose level
     pj=p[j]**exp(a)
     lik=lik*pj^y[j]*(1-pj)^(n[j]-y[j]); # uses binomial distribution
@@ -60,7 +60,7 @@ bcrmht2<-function(a,p,y,n){
 #' @return list containing the recommended next dose, posterior model probabilities,
 #' indicator for stopping due to safety concerns, estimated probability of toxicities for each dose
 #' 
-pocrm.imp<-function(p.skel, ttl, y, n, cs = 0.9, m_prior = NA, c_od = NA, conserv = F){
+pocrm.imp<-function(p.skel, ttl, y, n, cs = NA, m_prior = NA, c_od = NA, conserv = F){
   
   # if single ordering is given, convert to matrix
   
@@ -941,7 +941,7 @@ bma_pocrm <- function(p0, p.skel, ttl, cohortsize, ncohort, n_stop, no_skip = F,
   if(is.vector(p.skel)){
     p.skel <- as.matrix(p.skel)
   }
-  
+
   # check that format of cohort size is correct
   
   if(length(cohortsize) != 1 && length(cohortsize) != ncohort){
@@ -980,7 +980,7 @@ bma_pocrm <- function(p0, p.skel, ttl, cohortsize, ncohort, n_stop, no_skip = F,
   # generates tolerance level for each patient depending on simulation method
   
   if(sim_method == "Mozgunov"){
-    patient_tol <- runif(ncohort*cohortsize)
+    patient_tol <- runif(sum(cohortsize))
   }
   
   i <- 1

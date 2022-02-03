@@ -1,4 +1,8 @@
 library(ggplot2)
+library(tidyverse)
+library(rjson)
+library(viridis)
+library(cowplot)
 
 p1 <- c(0.05, 0.10, 0.15, 0.10, 0.15, 0.20, 0.15, 0.20, 0.30)
 p2 <- c(0.05, 0.10, 0.15, 0.10, 0.20, 0.30, 0.20, 0.30, 0.45)
@@ -43,12 +47,15 @@ for(i in 1:13){
                           sum(result[[2]]$num_pat[which(scenario[i,] > 0.33)])*0.2, 
                           sum(result[[3]]$num_pat[which(scenario[i,] > 0.33)])*0.2)
    
-   data <- cbind(pcs_scen,pas_scen,pots_scen, unsafe_scen, rep(i,3), c("POCRM","BMA Mix. Dens.","BMA Mix. Mean")) %>%
-      rbind(data)
+   new_data <- cbind(pcs_scen,pas_scen,pots_scen, unsafe_scen, rep(i,3), c("POCRM","BMA Mix. Dens.","BMA Mix. Mean")) 
+   colnames(new_data) <- colnames(data)
+   data <- rbind(data, new_data)
 }
 
 colnames(data) <- c("PCS", "PAS", "POTS", "over_tox","Scenario","Method")
-data <- transform(data, PCS = as.numeric(levels(PCS))[PCS], PAS = as.numeric(levels(PAS))[PAS], POTS = as.numeric(levels(POTS))[POTS], over_tox = as.numeric(levels(over_tox))[over_tox])
+# data <- transform(data, PCS = as.numeric(levels(PCS))[PCS], PAS = as.numeric(levels(PAS))[PAS], POTS = as.numeric(levels(POTS))[POTS], over_tox = as.numeric(levels(over_tox))[over_tox])
+
+data <- transform(data, PCS = as.numeric(PCS), PAS = as.numeric(PAS), POTS = as.numeric(POTS), over_tox = as.numeric(over_tox))
 
 mean_data <- data %>% 
    group_by(Method) %>% 
@@ -57,25 +64,35 @@ mean_data <- data %>%
 
 data <- rbind(data, mean_data)
 
-ggplot(data, mapping = aes(x = Scenario, y = PCS, fill = Method)) +
+par(mfrow = c(1,2))
+pcs_plot <- ggplot(data[which(data$Method != "BMA Mix. Dens."), ], mapping = aes(x = Scenario, y = PCS, fill = Method)) +
    geom_col(position = "dodge") +
    scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
    ylim(0,100) +
-   labs(y = "%", title = "Proportion of correct selections vs. scenario")
+   labs(y = "%", title = "Proportion of correct selections vs. scenario") + 
+   scale_fill_brewer(palette = "Dark2") + 
+   theme(legend.position = "none")
 
-ggplot(data, mapping = aes(x = Scenario, y = PAS, fill = Method)) +
-   geom_col(position = "dodge") +
-   scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
-   ylim(0,100) + 
-   labs(y = "%", title = "Proportion of acceptable selections vs. scenario")
+pas_plot <- ggplot(data[which(data$Method != "BMA Mix. Dens."), ], mapping = aes(x = Scenario, y = PAS, fill = Method)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
+  ylim(0,100) + 
+  labs(y = "%", title = "Proportion of acceptable selections vs. scenario")+ 
+  scale_fill_brewer(palette = "Dark2", labels = c("BMA", "POCRM")) + 
+  theme(legend.position = "none")
 
-ggplot(data, mapping = aes(x = Scenario, y = POTS, fill = Method)) +
-   geom_col(position = "dodge") +
-   scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
-   ylim(0,100) +
-   labs(y = "%", title = "Proportion of overly toxic selections vs. scenario")
+pots_plot <- ggplot(data, mapping = aes(x = Scenario, y = POTS, fill = Method)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
+  ylim(0,100) +
+  labs(y = "%", title = "Proportion of overly toxic selections vs. scenario") + 
+  scale_fill_brewer(palette = "Dark2") + 
+  theme(legend.position = "none")
 
-ggplot(data, mapping = aes(x = Scenario, y = over_tox, fill = Method)) +
-   geom_col(position = "dodge") +
-   scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
-   labs(y = "Count", title = "Number of patients treated at overly toxic doses vs. scenario")
+over_tox_plot <- ggplot(data[which(data$Method != "BMA Mix. Dens."), ], mapping = aes(x = Scenario, y = over_tox, fill = Method)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(limits = factor(c(seq(1,13,1), "Mean"))) +
+  labs(y = "Count", title = "Number of patients treated at overly toxic doses vs. scenario") +
+  scale_fill_brewer(palette = "Dark2", labels = c("BMA", "POCRM"))  
+
+plot_grid(pas_plot, over_tox_plot)

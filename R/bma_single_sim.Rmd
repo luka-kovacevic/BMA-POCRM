@@ -120,7 +120,6 @@ result.pocrm.seed1 <- bma_pocrm(p0 = p1,
           n_stop = n_stop,
           method = "Wages", sim_method = "Mozgunov")$hist
 round(result.pocrm.seed1,4)
-
 jump.pocrm.seed1 <- check_jumps(result.pocrm.seed1, p.skel = p.skel)
 
 cat("Target Toxicity Rate: ",ttl,"\n")
@@ -918,11 +917,12 @@ jump.data <- as.data.frame(cbind(c(mean.pocrm.mod, mean.bmamix.mod, mean.bmamix2
 colnames(jump.data) <- c("Mean change in p(m)", "Ordering","Method")
 
 jump.data$`Mean change in p(m)` <- as.numeric(jump.data$`Mean change in p(m)`)
-
-ggplot(jump.data, mapping = aes(x = Ordering, y = `Mean change in p(m)`, color = Method)) + 
-  geom_point() +
+change_pm <- ggplot(jump.data[which(jump.data$Method != "BMA Mix. Dens."),], mapping = aes(x = `Ordering`, y = `Mean change in p(m)`, color = Method)) + 
+  geom_point(size = 3) +
   ylim(c(0,NA)) + 
-  labs(y = "Absolute Mean Change", title = "Absolute mean change in p(m) vs. ordering")
+  labs(y = "Absolute Mean Change", title = "Absolute mean change in p(m) vs. ordering") + 
+  scale_colour_brewer(palette = "Dark2") + 
+  theme(legend.position = "none")
 
 mean.pocrm.est <- colMeans(rbind(mean.pocrm.est1, mean.pocrm.est2, mean.pocrm.est3))
 mean.bmamix2.est <- colMeans(rbind(mean.bmamix2.est1, mean.bmamix2.est2, mean.bmamix2.est3))
@@ -933,9 +933,10 @@ colnames(jump.data) <- c("Mean change in point estimate", "Dose Level","Method")
 
 jump.data$`Mean change in point estimate` <- as.numeric(jump.data$`Mean change in point estimate`)
 
-ggplot(jump.data, mapping = aes(x = `Dose Level`, y = `Mean change in point estimate`, color = Method)) +
-  geom_point() +
+change_tox <- ggplot(jump.data[which(jump.data$Method != "BMA Mix. Dens."),], mapping = aes(x = `Dose Level`, y = `Mean change in point estimate`, color = Method)) +
+  geom_point(size = 3) +
   ylim(c(0,NA)) +
-  labs(y = "Absolute Mean Change", title = "Absolute mean change in toxicity estimate vs. dose level")
+  labs(y = "Absolute Mean Change", title = "Absolute mean change in toxicity estimate vs. dose level") +
+  scale_colour_brewer(palette = "Dark2", labels = c("BMA", "POCRM"))
 
 ```
