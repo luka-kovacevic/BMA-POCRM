@@ -1,4 +1,4 @@
-# MRC-BSU-Internship
+# BMA-POCRM: A coherent approach to the Continual Reassessment Method for Partial Orderings
 The aim of this work is to develop an extension to the Partial Ordering Continual Reassessment Method (POCRM) proposed by Wages et al. (2011) to take into account further uncertainty in the ordering of doses in settings where this uncertainty is present. This work was completed at the MRC Biostatistics Unit between June 2021 and September 2021. The documents and R code associated with this project, that can be found within this repository, are outlined below.
 
 # Documents
